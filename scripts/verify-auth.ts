@@ -1,7 +1,7 @@
 
 import axios from 'axios';
 
-const API_URL = 'https://api-flat-icons.vercel.app';
+const API_URL = 'https://cloudflare-workers-openapi-production.up.railway.app/';
 
 async function verifyAuth() {
   console.log('🔐 Starting Auth Verification...');
