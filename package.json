@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build:worker && nest build",
-    "build:worker": "npm run build --workspace=r2-worker",
+    "build:worker": "npm run build -w cloudflare-workers-openapi",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "dev": "nest start --watch",
