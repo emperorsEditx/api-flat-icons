@@ -4,7 +4,7 @@ import FormData from 'form-data';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = 'https://api-flat-icons.vercel.app';
 const USER_ID = 1; // Assuming admin/existing user ID
 
 async function runVerification() {

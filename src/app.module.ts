@@ -34,7 +34,7 @@ import { R2Module } from './r2/r2.module';
         JWT_SECRET: Joi.string().required(),
 
         CORS_ORIGIN: Joi.string().default(
-          'http://localhost:3000,http://localhost:3001,https://admin-flat-icons.vercel.app/',
+          'https://admin-flat-icons.vercel.app/',
         ),
 
         // R2 Configuration
