@@ -5,8 +5,12 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "workspaces": [
+    "r2-worker"
+  ],
   "scripts": {
-    "build": "nest build",
+    "build": "npm run build:worker && nest build",
+    "build:worker": "cd r2-worker && npm install && npm run build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "dev": "nest start --watch",
