@@ -9,9 +9,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
-  // Enable CORS for frontend
+  const corsOrigin = configService.get<string>('CORS_ORIGIN');
+
   app.enableCors({
-    origin: (configService.get<string>('CORS_ORIGIN') || '').split(',').map(origin => origin.trim()), // Support multiple origins
+    // If CORS_ORIGIN is provided, split it; otherwise, allow all (or a specific default)
+    origin: corsOrigin ? corsOrigin.split(',').map((o) => o.trim()) : true, // 'true' reflects the request origin, effectively allowing any
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
