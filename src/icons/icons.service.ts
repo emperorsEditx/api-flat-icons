@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Icon, IconStatus, IconStyle, IconType } from './entities/icon.entity';
 import { Tag, TaggableType } from '../tags/entites/tag.entity';
 import { R2Service } from '../r2/r2.service';
+import { User } from '../user/entities/user.entity';
 
 interface UploadedFile {
   originalname: string;
@@ -40,10 +41,22 @@ export class IconsService {
       groups[uid].push(icon);
     }
 
-    return Object.keys(groups).map(userId => ({
-      userId: Number(userId),
-      icons: groups[Number(userId)]
-    }));
+    const userRepo = this.dataSource.getRepository(User);
+    const userIds = Object.keys(groups).map(Number);
+    let users: User[] = [];
+    if (userIds.length > 0) {
+      users = await userRepo.find({ where: userIds.map(id => ({ id })) });
+    }
+
+    return Object.keys(groups).map(userId => {
+      const numId = Number(userId);
+      const user = users.find(u => u.id === numId);
+      return {
+        userId: numId,
+        userName: user ? user.name : `User ${numId}`,
+        icons: groups[numId]
+      };
+    });
   }
 
   /* -----------------------------------------------------
