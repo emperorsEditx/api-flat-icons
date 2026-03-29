@@ -274,4 +274,32 @@ export class IconsService {
 
     return counts;
   }
+
+  /* -----------------------------------------------------
+     STEP 9 — REPLACE FILE
+  ----------------------------------------------------- */
+  async replaceFile(id: number, file: UploadedFile) {
+    if (!file) throw new BadRequestException('File not provided');
+
+    const iconRepo = this.dataSource.getRepository(Icon);
+    const icon = await iconRepo.findOne({ where: { id } });
+
+    if (!icon) throw new BadRequestException('Icon not found');
+
+    const filename = `${Date.now()}-${file.originalname}`;
+    const newKey = `temp/icons/${icon.created_by}/${filename}`;
+
+    // Upload to R2
+    await this.r2Service.putObject(newKey, file.buffer, file.mimetype);
+
+    // Delete old path from R2 to prevent orphans
+    if (icon.path && icon.path.startsWith('temp/')) {
+      await this.r2Service.deleteObject(icon.path);
+    }
+
+    icon.path = newKey;
+    icon.title = file.originalname;
+
+    return await iconRepo.save(icon);
+  }
 }

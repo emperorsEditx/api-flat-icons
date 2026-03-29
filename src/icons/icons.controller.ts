@@ -144,4 +144,35 @@ export class IconsController {
   async getApprovedIcons(@Query('style') style?: IconStyle) {
     return this.iconsService.findAllApproved(style);
   }
+
+  /* -----------------------------------------------------
+     STEP 9 — REPLACE ICON
+  ----------------------------------------------------- */
+  @Patch(':id/replace')
+  @UseInterceptors(
+    FilesInterceptor('files', 1, {
+      storage: memoryStorage(),
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'image/svg+xml' ||
+          file.mimetype === 'image/png'
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException('Only SVG or PNG files are allowed'),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async replaceIcon(
+    @Param('id') id: string,
+    @UploadedFiles()
+    files: { originalname: string; buffer: Buffer; mimetype: string }[],
+  ) {
+    if (!files || files.length === 0) throw new BadRequestException('No file uploaded');
+    return this.iconsService.replaceFile(+id, files[0]);
+  }
 }

@@ -33,9 +33,10 @@ import { R2Module } from './r2/r2.module';
 
         JWT_SECRET: Joi.string().required(),
 
-        CORS_ORIGIN: Joi.string().default(
+        CORS_ORIGIN: Joi.string().default([
           'https://admin-flat-icons.vercel.app/',
-        ),
+          'localhost:3000',
+        ]),
 
         // R2 Configuration
         R2_ACCESS_KEY_ID: Joi.string().required(),
@@ -55,8 +56,7 @@ import { R2Module } from './r2/r2.module';
           rejectUnauthorized: false,
         },
         autoLoadEntities: true,
-        synchronize:
-          configService.get<string>('NODE_ENV') === 'development',
+        synchronize: configService.get<string>('NODE_ENV') === 'development',
       }),
     }),
 
@@ -79,4 +79,4 @@ import { R2Module } from './r2/r2.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}
