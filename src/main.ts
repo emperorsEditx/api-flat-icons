@@ -10,10 +10,27 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   const corsOrigin = configService.get<string>('CORS_ORIGIN');
+  const normalizeOrigin = (origin: string) => origin.trim().replace(/\/+$/, '');
+  const allowedOrigins = corsOrigin
+    ? corsOrigin
+      .split(',')
+      .map((origin) => normalizeOrigin(origin))
+      .filter(Boolean)
+    : [];
 
   app.enableCors({
-    // If CORS_ORIGIN is provided, split it; otherwise, allow all (or a specific default)
-    origin: corsOrigin ? corsOrigin.split(',').map((o) => o.trim()) : true, // 'true' reflects the request origin, effectively allowing any
+    // Normalize origins to avoid subtle mismatches like trailing slash differences.
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.length === 0) {
+        callback(null, true);
+        return;
+      }
+
+      const requestOrigin = normalizeOrigin(origin);
+      const isAllowed = allowedOrigins.includes(requestOrigin);
+
+      callback(isAllowed ? null : new Error('Not allowed by CORS'), isAllowed);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

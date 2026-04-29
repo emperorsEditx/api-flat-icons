@@ -31,6 +31,15 @@ export class Icon {
   @Column({ length: 191 })
   title: string;
 
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ name: 'meta_title', type: 'text', nullable: true })
+  metaTitle: string;
+
+  @Column({ name: 'meta_description', type: 'text', nullable: true })
+  metaDescription: string;
+
   @Column({ length: 191 })
   path: string;
 

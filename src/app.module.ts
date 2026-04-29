@@ -33,16 +33,18 @@ import { R2Module } from './r2/r2.module';
 
         JWT_SECRET: Joi.string().required(),
 
-        CORS_ORIGIN: Joi.string().default([
-          'https://admin-flat-icons.vercel.app/',
-          'localhost:3000',
-        ]),
+        CORS_ORIGIN: Joi.string().default(
+          'https://admin-flat-icons.vercel.app,https://flat-icons.awaiss.tech,https://www.flat-icons.awaiss.tech,http://localhost:3000,http://localhost:3001',
+        ),
 
         // R2 Configuration
         R2_ACCESS_KEY_ID: Joi.string().required(),
         R2_SECRET_ACCESS_KEY: Joi.string().required(),
         R2_ACCOUNT_ID: Joi.string().required(),
         R2_BUCKET_NAME: Joi.string().required(),
+
+        // AI Configuration
+        ANTHROPIC_API_KEY: Joi.string().required(),
       }),
     }),
 
@@ -57,6 +59,8 @@ import { R2Module } from './r2/r2.module';
         },
         autoLoadEntities: true,
         synchronize: configService.get<string>('NODE_ENV') === 'development',
+        migrations: [join(__dirname, 'migrations/*{.ts,.js}')],
+        migrationsRun: configService.get<string>('NODE_ENV') === 'production',
       }),
     }),
 

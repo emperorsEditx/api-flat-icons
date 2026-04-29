@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { IconsService } from './icons.service';
+import { IconsService, AiFillResult, AiFillBulkResponse } from './icons.service';
 import { IconStyle } from './entities/icon.entity';
 import { UpdateIconDto } from './dto/update-icon.dto';
 
@@ -22,9 +22,10 @@ interface TempIconResponse {
   originalName: string;
   previewUrl: string;
 }
+
 @Controller('icons')
 export class IconsController {
-  constructor(private readonly iconsService: IconsService) { }
+  constructor(private readonly iconsService: IconsService) {}
 
   /* -----------------------------------------------------
      STEP 1 — TEMP UPLOAD (MULTI FILE)
@@ -64,11 +65,10 @@ export class IconsController {
         file,
         Number(createdBy),
       );
-      // Construct response to match frontend expectations or return full icon
       uploaded.push({
-        tempName: tempIcon.title, // or ID + name depending on needs
+        tempName: tempIcon.title,
         originalName: tempIcon.title,
-        previewUrl: tempIcon.path
+        previewUrl: tempIcon.path,
       });
     }
 
@@ -91,7 +91,7 @@ export class IconsController {
     return this.iconsService.getDrafts(Number(userId));
   }
 
-  // Legacy endpoint support (optional, can redirect to drafts)
+  // Legacy endpoint support
   @Get('temp/:userId')
   async getTempIcons(@Param('userId') userId: string) {
     return this.iconsService.getDrafts(Number(userId));
@@ -148,6 +148,27 @@ export class IconsController {
   /* -----------------------------------------------------
      STEP 9 — REPLACE ICON
   ----------------------------------------------------- */
+  /* -----------------------------------------------------
+     STEP 10 — AI FILL METADATA (BULK — MUST BE BEFORE :id ROUTES)
+  ----------------------------------------------------- */
+  @Post('ai-fill/bulk')
+  async aiFillBulk(@Body('ids') ids: number[]): Promise<AiFillBulkResponse> {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException(
+        'ids must be a non-empty array of icon IDs',
+      );
+    }
+    return this.iconsService.aiFillBulk(ids);
+  }
+
+  /* -----------------------------------------------------
+     STEP 11 — AI FILL METADATA (SINGLE ICON)
+  ----------------------------------------------------- */
+  @Post(':id/ai-fill')
+  async aiFill(@Param('id') id: string): Promise<AiFillResult> {
+    return this.iconsService.aiFillMetadata(+id);
+  }
+
   @Patch(':id/replace')
   @UseInterceptors(
     FilesInterceptor('files', 1, {
@@ -172,7 +193,8 @@ export class IconsController {
     @UploadedFiles()
     files: { originalname: string; buffer: Buffer; mimetype: string }[],
   ) {
-    if (!files || files.length === 0) throw new BadRequestException('No file uploaded');
+    if (!files || files.length === 0)
+      throw new BadRequestException('No file uploaded');
     return this.iconsService.replaceFile(+id, files[0]);
   }
 }

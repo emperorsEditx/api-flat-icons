@@ -4,9 +4,20 @@
     {
       "src": "src/main.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "src/preflight.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "src/preflight.ts",
+      "methods": [
+        "OPTIONS"
+      ]
+    },
     {
       "src": "/(.*)",
       "dest": "src/main.ts",

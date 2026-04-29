@@ -6,6 +6,18 @@ export class UpdateIconDto {
   @IsOptional()
   title?: string;
 
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  metaTitle?: string;
+
+  @IsString()
+  @IsOptional()
+  metaDescription?: string;
+
   @IsInt()
   @IsOptional()
   categoryId?: number;

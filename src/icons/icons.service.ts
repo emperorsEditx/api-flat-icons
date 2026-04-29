@@ -5,6 +5,8 @@ import { Icon, IconStatus, IconStyle, IconType } from './entities/icon.entity';
 import { Tag, TaggableType } from '../tags/entites/tag.entity';
 import { R2Service } from '../r2/r2.service';
 import { User } from '../user/entities/user.entity';
+import { UpdateIconDto } from './dto/update-icon.dto';
+import Anthropic from '@anthropic-ai/sdk';
 
 interface UploadedFile {
   originalname: string;
@@ -12,8 +14,22 @@ interface UploadedFile {
   mimetype: string;
 }
 
+export interface AiFillResult {
+  description: string;
+  metaTitle: string;
+  metaDescription: string;
+  tags: string[];
+}
+
+export interface AiFillBulkResponse {
+  perIcon: { id: number; status: string; data: AiFillResult | null; error: string | null }[];
+  packSummary: AiFillResult;
+}
+
 @Injectable()
 export class IconsService {
+  private readonly anthropic: Anthropic;
+
   constructor(
     @InjectRepository(Icon)
     private readonly iconRepository: Repository<Icon>,
@@ -21,7 +37,9 @@ export class IconsService {
     @InjectRepository(Tag)
     private readonly tagRepository: Repository<Tag>,
     private readonly r2Service: R2Service,
-  ) { }
+  ) {
+    this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
 
   /* -----------------------------------------------------
      STEP 5 — GET PENDING ICONS (GROUPED BY USER)
@@ -115,11 +133,6 @@ export class IconsService {
     const iconRepo = this.dataSource.getRepository(Icon);
     const icon = iconRepo.create({
       title: file.originalname,
-      // Store the R2 Key purely? Or the full URL? 
-      // Existing code seemed to store relative path. Let's store the Key.
-      // Frontend might expect a full URL.
-      // We can store the Key and have a getter or return full URL in API.
-      // For now, let's store the Key to be clean.
       path: key,
       type: IconType.SVG,
       status: IconStatus.DRAFT,
@@ -148,15 +161,25 @@ export class IconsService {
   /* -----------------------------------------------------
      STEP 3 — UPDATE DRAFT METADATA
   ----------------------------------------------------- */
-  async update(id: number, updateIconDto: any) {
+  async update(id: number, updateIconDto: UpdateIconDto) {
     const iconRepo = this.dataSource.getRepository(Icon);
     const icon = await iconRepo.findOne({ where: { id } });
+
+    // DEBUG: log incoming payload for troubleshooting live update issues
+    try {
+      console.log(`[IconsService.update] incoming id=${id} payload=`, updateIconDto);
+    } catch (e) {
+      // ignore logging errors
+    }
 
     if (!icon) {
       throw new BadRequestException('Icon not found');
     }
 
     if (updateIconDto.title) icon.title = updateIconDto.title;
+    if (updateIconDto.description !== undefined) icon.description = updateIconDto.description;
+    if (updateIconDto.metaTitle !== undefined) icon.metaTitle = updateIconDto.metaTitle;
+    if (updateIconDto.metaDescription !== undefined) icon.metaDescription = updateIconDto.metaDescription;
     if (updateIconDto.categoryId !== undefined) icon.category_id = updateIconDto.categoryId;
     if (updateIconDto.subCategoryId !== undefined) icon.sub_category_id = updateIconDto.subCategoryId;
     if (updateIconDto.style) icon.style = updateIconDto.style;
@@ -177,7 +200,14 @@ export class IconsService {
       await this.tagRepository.save(newTags);
     }
 
-    return await iconRepo.save(icon);
+    const saved = await iconRepo.save(icon);
+    // DEBUG: log saved fields to verify persistence
+    try {
+      console.log(`[IconsService.update] saved id=${saved.id} description=${saved.description} metaTitle=${saved.metaTitle} metaDescription=${saved.metaDescription}`);
+    } catch (e) {
+      // ignore logging errors
+    }
+    return saved;
   }
 
   /* -----------------------------------------------------
@@ -314,5 +344,169 @@ export class IconsService {
     icon.title = file.originalname;
 
     return await iconRepo.save(icon);
+  }
+
+  /* -----------------------------------------------------
+     STEP 10 — AI FILL METADATA (SINGLE ICON)
+  ----------------------------------------------------- */
+  async aiFillMetadata(iconId: number): Promise<AiFillResult> {
+    const iconRepo = this.dataSource.getRepository(Icon);
+    const icon = await iconRepo.findOne({ where: { id: iconId } });
+
+    if (!icon) throw new BadRequestException('Icon not found');
+
+    // Fetch the file from R2 via its public URL
+    const fileUrl = `https://pub-e598b9aaee344c728dd117b85cd19c87.r2.dev/${icon.path}`;
+    const response = await fetch(fileUrl);
+
+    if (!response.ok) {
+      throw new BadRequestException(`Failed to fetch icon file: ${response.statusText}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const isSvg = icon.path.endsWith('.svg');
+
+    const imageContent = isSvg
+      ? { type: 'text' as const, text: `SVG icon:\n${Buffer.from(buffer).toString('utf-8')}` }
+      : {
+          type: 'image' as const,
+          source: {
+            type: 'base64' as const,
+            media_type: 'image/png' as const,
+            data: Buffer.from(buffer).toString('base64'),
+          },
+        };
+
+    const aiResponse = await this.anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 500,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            imageContent,
+            {
+              type: 'text',
+              text: `You are an SEO expert for an icon library. Analyze this icon carefully and return ONLY a valid JSON object with these exact fields:
+{
+  "description": "1-2 sentence description of what the icon depicts and its primary use case in UI/UX design",
+  "metaTitle": "SEO meta title under 60 characters, format: '[Icon Name] Icon - Free SVG & PNG Download'",
+  "metaDescription": "SEO meta description under 155 characters describing the icon and its use cases",
+  "tags": ["tag1", "tag2", "tag3"] // array of 6-10 relevant lowercase single-word tags
+}
+Return ONLY the raw JSON object. No explanation, no markdown code fences, no preamble.`,
+            },
+          ],
+        },
+      ],
+    });
+
+    const rawText = aiResponse.content[0].type === 'text' ? aiResponse.content[0].text.trim() : '';
+
+    try {
+      return JSON.parse(rawText) as AiFillResult;
+    } catch {
+      // Strip accidental markdown fences if Claude added them
+      const cleaned = rawText.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+      return JSON.parse(cleaned) as AiFillResult;
+    }
+  }
+
+  /* -----------------------------------------------------
+     STEP 11 — AI FILL METADATA (BULK)
+  ----------------------------------------------------- */
+  async aiFillBulk(ids: number[]): Promise<AiFillBulkResponse> {
+    if (!ids || ids.length === 0) {
+      throw new BadRequestException('No icon IDs provided');
+    }
+
+    // Step A — fill each icon individually in parallel
+    const settled = await Promise.allSettled(
+      ids.map(id => this.aiFillMetadata(id))
+    );
+
+    const perIcon = ids.map((id, index) => {
+      const result = settled[index];
+      if (result.status === 'fulfilled') {
+        return { id, status: 'fulfilled', data: result.value, error: null };
+      } else {
+        const err = result.reason as Error;
+        console.error(`[aiFillBulk] Failed for icon ${id}:`, err.message);
+        return { id, status: 'rejected', data: null, error: err.message };
+      }
+    });
+
+    // Step B — generate a pack-level summary from the successful per-icon results
+    const packSummary = await this.aiFillPackSummary(perIcon);
+
+    return { perIcon, packSummary };
+  }
+
+  /* -----------------------------------------------------
+     STEP 12 — AI PACK SUMMARY (from per-icon results)
+  ----------------------------------------------------- */
+  private async aiFillPackSummary(
+    perIcon: { id: number; status: string; data: AiFillResult | null; error: string | null }[]
+  ): Promise<AiFillResult> {
+    const successful = perIcon.filter(r => r.status === 'fulfilled' && r.data);
+    const count = successful.length;
+
+    // Fallback if everything failed
+    if (count === 0) {
+      return {
+        description: 'A collection of icons.',
+        metaTitle: `Icon Pack - Free SVG & PNG Download`,
+        metaDescription: 'Download this icon pack in SVG and PNG format for your UI/UX projects.',
+        tags: ['icon', 'pack', 'svg', 'ui', 'design'],
+      };
+    }
+
+    // Build a condensed summary of all per-icon results for the prompt
+    const iconSummaries = successful.map((r, i) =>
+      `Icon ${i + 1}: ${r.data!.description} Tags: ${r.data!.tags.join(', ')}`
+    ).join('\n');
+
+    // Collect and deduplicate all tags across icons
+    const allTags = Array.from(
+      new Set(successful.flatMap(r => r.data!.tags))
+    ).slice(0, 15);
+
+    const prompt = `You are an SEO expert for an icon library. Below are descriptions of ${count} icons that belong to the same pack uploaded together.
+
+${iconSummaries}
+
+Based on these icons as a group, generate a SINGLE pack-level summary. Return ONLY a valid JSON object with these exact fields:
+{
+  "description": "2-3 sentence description summarising what this pack of ${count} icons covers and their primary use cases in UI/UX design",
+  "metaTitle": "SEO meta title under 60 characters for the pack, e.g. '${count} UI Icons Pack - Free SVG & PNG Download'",
+  "metaDescription": "SEO meta description under 155 characters describing the pack and its use cases",
+  "tags": ${JSON.stringify(allTags.slice(0, 10))}
+}
+Return ONLY the raw JSON object. No explanation, no markdown code fences, no preamble.`;
+
+    const aiResponse = await this.anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 400,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const rawText = aiResponse.content[0].type === 'text' ? aiResponse.content[0].text.trim() : '';
+
+    try {
+      return JSON.parse(rawText) as AiFillResult;
+    } catch {
+      const cleaned = rawText.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+      try {
+        return JSON.parse(cleaned) as AiFillResult;
+      } catch {
+        // Last-resort fallback if parsing still fails
+        return {
+          description: `A pack of ${count} icons for UI/UX design projects.`,
+          metaTitle: `${count} Icons Pack - Free SVG & PNG Download`,
+          metaDescription: `Download this pack of ${count} icons in SVG and PNG format for your design projects.`,
+          tags: allTags.slice(0, 10),
+        };
+      }
+    }
   }
 }
